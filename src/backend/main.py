@@ -2,7 +2,6 @@ import os
 import asyncio
 import uuid
 import glob
-import re
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -54,13 +53,14 @@ def get_ydl_opts(custom_opts=None):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        # Используем комбинацию клиентов для получения ВСЕХ форматов (включая 1080p+)
+        # Набор клиентов для обхода ограничений 360p на VPS
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web', 'ios', 'tv'],
-                'skip': ['dash', 'hls'] # Не пропускаем DASH потоки
+                'player_client': ['tv', 'web', 'android', 'ios'],
+                'player_skip': ['webpage', 'configs'],
             }
         },
+        'format_sort': ['res:1080', 'ext:mp4:m4a', 'codec:h264'], # Приоритет на 1080p и MP4
     }
     cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     if os.path.exists(cookies_path):
@@ -76,8 +76,8 @@ def extract_info(url: str) -> dict:
 def download_video(url: str, format_val: str, output_path: str) -> str:
     if format_val.isdigit():
         height = format_val
-        # Улучшенный селектор: ищем именно видео нужной высоты + лучшее аудио
-        ydl_format = f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+        # Просим скачать видео в выбранном разрешении + лучший звук
+        ydl_format = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
         ydl_opts = get_ydl_opts({
             'format': ydl_format,
             'outtmpl': f"{output_path}.%(ext)s",
@@ -116,20 +116,22 @@ async def get_video_info(request: VideoRequest):
         formats = []
         seen_heights = set()
         
-        # Перебираем все форматы, включая те, что без звука (DASH)
-        for f in info.get('formats', []):
+        # Получаем все форматы, включая адаптивные (DASH)
+        raw_formats = info.get('formats', [])
+        
+        for f in raw_formats:
             h = f.get('height')
             if not h or f.get('vcodec') == 'none':
                 continue
             
-            # Нам нужны только уникальные разрешения (1080, 720, 480...)
+            # Добавляем разрешение в список, если его еще нет
             if h not in seen_heights:
                 formats.append({
                     'format_id': str(h),
                     'ext': 'mp4',
                     'resolution': f"{h}p",
                     'filesize': f.get('filesize') or f.get('filesize_approx'),
-                    'quality': f.get('format_note') or f.get('resolution')
+                    'quality': f.get('format_note') or f"{h}p"
                 })
                 seen_heights.add(h)
 
@@ -142,7 +144,7 @@ async def get_video_info(request: VideoRequest):
             'quality': 'MP3 192kbps'
         })
 
-        # Сортируем от большего к меньшему
+        # Сортировка (от 4K до 144p)
         formats.sort(key=lambda x: int(x['resolution'].split('p')[0]) if 'p' in x['resolution'] else 0, reverse=True)
 
         return {
