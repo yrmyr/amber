@@ -28,10 +28,6 @@ if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
 COOKIES_PATH = os.path.join(os.path.dirname(__file__), "cookies.txt")
-if os.path.exists(COOKIES_PATH):
-    logger.info(f"✅ COOKIES FOUND: {COOKIES_PATH}")
-else:
-    logger.warning(f"❌ NO COOKIES FOUND AT: {COOKIES_PATH}")
 
 class VideoRequest(BaseModel):
     url: str
@@ -60,20 +56,31 @@ def remove_file(path: str):
         logger.error(f"Error removing file {path}: {e}")
 
 def get_ydl_opts(custom_opts=None):
+    # МАКСИМАЛЬНО НАДЕЖНЫЕ ОПЦИИ ДЛЯ VPS
     opts = {
-        'quiet': True,
-        'no_warnings': True,
+        'quiet': False, # Включаем логи для отладки в Docker logs
+        'no_warnings': False,
         'noplaylist': True,
-        'source_address': '0.0.0.0', # Принудительно используем IPv4 (важно для VPS)
+        'source_address': '0.0.0.0', # Принудительно IPv4
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'android', 'web', 'tv'],
-                'player_skip': [],
+                'player_client': ['android', 'web', 'tv'], # Android сейчас стабильнее всего
+                'player_skip': ['webpage', 'configs'],
             }
         },
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
     }
+    
     if os.path.exists(COOKIES_PATH):
+        logger.info(f"--- USING COOKIES FROM {COOKIES_PATH} ---")
         opts['cookiefile'] = COOKIES_PATH
+    else:
+        logger.warning("--- NO COOKIES.TXT FOUND! ---")
+
     if custom_opts:
         opts.update(custom_opts)
     return opts
@@ -83,37 +90,33 @@ def extract_info(url: str) -> dict:
         return ydl.extract_info(url, download=False)
 
 def download_video(url: str, format_val: str, output_path: str) -> str:
-    # Базовые опции
     common_opts = get_ydl_opts()
-
+    
+    # ПУЛЕСТОЙКИЙ СЕЛЕКТОР ФОРМАТА
+    # Если формат - число (высота), ищем лучшее видео этой высоты + лучший звук.
+    # Если не находим - берем просто "лучшее видео + лучший звук".
     if format_val.isdigit():
-        height = format_val
-        # Самый надежный способ: используем format_sort вместо сложной строки format
-        ydl_opts = {
-            **common_opts,
-            'format': 'bestvideo+bestaudio/best',
-            'format_sort': [f'res:{height}', 'ext:mp4:m4a'],
-            'outtmpl': f"{output_path}.%(ext)s",
-            'merge_output_format': 'mp4',
-        }
+        h = format_val
+        # Логика: "видео <= H + звук" ИЛИ "просто лучшее доступное"
+        ydl_format = f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
     elif format_val == 'bestaudio':
-        ydl_opts = {
-            **common_opts,
-            'format': 'bestaudio/best',
-            'outtmpl': f"{output_path}.%(ext)s",
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        }
+        ydl_format = "bestaudio/best"
     else:
-        ydl_opts = {
-            **common_opts,
-            'format': 'bestvideo+bestaudio/best',
-            'outtmpl': f"{output_path}.%(ext)s",
-            'merge_output_format': 'mp4',
-        }
+        ydl_format = "bestvideo+bestaudio/best"
+
+    ydl_opts = {
+        **common_opts,
+        'format': ydl_format,
+        'outtmpl': f"{output_path}.%(ext)s",
+        'merge_output_format': 'mp4',
+    }
+    
+    if format_val == 'bestaudio':
+        ydl_opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }]
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
@@ -125,7 +128,7 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
 @app.post("/api/info", response_model=VideoInfo)
 async def get_video_info(request: VideoRequest):
     try:
-        logger.info(f"Fetching info for: {request.url}")
+        logger.info(f"API: Fetching info for {request.url}")
         loop = asyncio.get_event_loop()
         info = await loop.run_in_executor(None, extract_info, request.url)
         
@@ -147,15 +150,9 @@ async def get_video_info(request: VideoRequest):
                 })
                 seen_heights.add(h)
 
-        formats.append({
-            'format_id': 'bestaudio',
-            'ext': 'mp3',
-            'resolution': 'Audio Only',
-            'filesize': None,
-            'quality': 'MP3 192kbps'
-        })
-
+        formats.append({'format_id': 'bestaudio', 'ext': 'mp3', 'resolution': 'Audio Only', 'quality': 'MP3 192kbps'})
         formats.sort(key=lambda x: int(x['resolution'].split('p')[0]) if 'p' in x['resolution'] else 0, reverse=True)
+
         return {
             "id": info.get("id"),
             "title": info.get("title"),
@@ -165,12 +162,13 @@ async def get_video_info(request: VideoRequest):
             "formats": formats
         }
     except Exception as e:
-        logger.error(f"Error fetching info: {e}")
+        logger.error(f"API Error (Info): {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/download")
 async def start_download(request: VideoRequest, background_tasks: BackgroundTasks):
     try:
+        logger.info(f"API: Starting download for {request.url} (Quality: {request.format_id})")
         file_uuid = str(uuid.uuid4())
         output_base = os.path.join(DOWNLOAD_DIR, file_uuid)
         
@@ -180,19 +178,14 @@ async def start_download(request: VideoRequest, background_tasks: BackgroundTask
         )
         
         background_tasks.add_task(remove_file, file_path)
-        
-        return FileResponse(
-            path=file_path,
-            filename=os.path.basename(file_path),
-            media_type='application/octet-stream'
-        )
+        return FileResponse(path=file_path, filename=os.path.basename(file_path), media_type='application/octet-stream')
     except Exception as e:
-        logger.error(f"Download error: {e}")
+        logger.error(f"API Error (Download): {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "service": "amber-api"}
+    return {"status": "ok"}
 
 if __name__ == "__main__":
     import uvicorn
