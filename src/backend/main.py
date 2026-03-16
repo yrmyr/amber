@@ -71,7 +71,10 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
     # Если формат числовой (высота), строим селектор качества
     if format_val.isdigit():
         height = format_val
-        ydl_format = f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}]/best"
+        # Более надежный селектор: берем лучшее видео до нужной высоты + лучший звук
+        # И позволяем yt-dlp самому решить, какой контейнер использовать, 
+        # а потом склеить в mp4 через ffmpeg
+        ydl_format = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
         ydl_opts = get_ydl_opts({
             'format': ydl_format,
             'outtmpl': f"{output_path}.%(ext)s",
