@@ -57,13 +57,16 @@ def extract_info(url: str) -> dict:
         'no_warnings': True,
         'noplaylist': True,
     }
+    # Если файл cookies.txt существует, используем его
+    if os.path.exists(os.path.join(os.path.dirname(__file__), "cookies.txt")):
+        ydl_opts['cookiefile'] = os.path.join(os.path.dirname(__file__), "cookies.txt")
+        
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=False)
 
 def download_video(url: str, format_id: str, output_path: str) -> str:
-    """Синхронная функция скачивания. Склеивает видео с аудио для высокого качества."""
+    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     
-    # Если это аудио, настраиваем конвертацию в mp3
     if format_id == 'bestaudio':
         ydl_opts = {
             'format': 'bestaudio/best',
@@ -78,7 +81,6 @@ def download_video(url: str, format_id: str, output_path: str) -> str:
             'noplaylist': True,
         }
     else:
-        # Для видео просим склеить выбранный видео-поток с лучшим аудио
         ydl_opts = {
             'format': f"{format_id}+bestaudio/best",
             'outtmpl': f"{output_path}.%(ext)s",
@@ -87,6 +89,9 @@ def download_video(url: str, format_id: str, output_path: str) -> str:
             'no_warnings': True,
             'noplaylist': True,
         }
+
+    if os.path.exists(cookies_path):
+        ydl_opts['cookiefile'] = cookies_path
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])

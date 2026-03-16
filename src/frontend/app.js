@@ -1,5 +1,5 @@
 // Автоматически определяем адрес сервера: берем текущий хост (IP или домен) и меняем порт на 8000
-const API_URL = `http://${window.location.hostname}:8000/api`;
+const API_URL = `http://${window.location.hostname}:8001/api`;
 
 const urlInput = document.getElementById('url-input');
 const fetchBtn = document.getElementById('fetch-btn');

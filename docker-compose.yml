@@ -6,7 +6,7 @@ services:
     build: ./src/backend
     container_name: amber-backend
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./src/backend/downloads:/app/downloads
     restart: always
