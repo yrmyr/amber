@@ -85,18 +85,24 @@ def get_ydl_opts(custom_opts=None):
 def extract_info(url: str) -> dict:
     with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
         return ydl.extract_info(url, download=False)
-
 def download_video(url: str, format_val: str, output_path: str) -> str:
+    # Базовые опции для обхода блокировок
+    common_opts = get_ydl_opts()
+
     if format_val.isdigit():
         height = format_val
-        ydl_format = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
-        ydl_opts = get_ydl_opts({
+        # Самый надежный селектор: берем лучшее видео <= выбранной высоты + лучший звук
+        # yt-dlp сам выберет лучшие кодеки, а ffmpeg склеит их в mp4
+        ydl_format = f"bestvideo[height<={height}]+bestaudio/best"
+        ydl_opts = {
+            **common_opts,
             'format': ydl_format,
             'outtmpl': f"{output_path}.%(ext)s",
-            'merge_output_format': 'mp4',
-        })
+            'merge_output_format': 'mp4', # Принудительно склеиваем в mp4
+        }
     elif format_val == 'bestaudio':
-        ydl_opts = get_ydl_opts({
+        ydl_opts = {
+            **common_opts,
             'format': 'bestaudio/best',
             'outtmpl': f"{output_path}.%(ext)s",
             'postprocessors': [{
@@ -104,13 +110,14 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-        })
+        }
     else:
-        ydl_opts = get_ydl_opts({
+        ydl_opts = {
+            **common_opts,
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f"{output_path}.%(ext)s",
             'merge_output_format': 'mp4',
-        })
+        }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
@@ -118,6 +125,7 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
         if actual_files:
             return actual_files[0]
         raise Exception("File not found after download")
+
 
 @app.post("/api/info", response_model=VideoInfo)
 async def get_video_info(request: VideoRequest):
