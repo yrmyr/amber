@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import yt_dlp
 from typing import List, Optional
 
-# Настройка логирования для Docker
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("amber")
 
@@ -27,7 +27,6 @@ DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
-# ПРОВЕРКА КУКОВ ПРИ ЗАПУСКЕ
 COOKIES_PATH = os.path.join(os.path.dirname(__file__), "cookies.txt")
 if os.path.exists(COOKIES_PATH):
     logger.info(f"✅ COOKIES FOUND: {COOKIES_PATH}")
@@ -65,13 +64,10 @@ def get_ydl_opts(custom_opts=None):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        # ВКЛЮЧАЕМ ВСЕ ВОЗМОЖНЫЕ ПОТОКИ
-        'youtube_include_dash_manifest': True,
-        'youtube_include_hls_manifest': True,
-        'check_formats': True,
+        'source_address': '0.0.0.0', # Принудительно используем IPv4 (важно для VPS)
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'web', 'android', 'tv'],
+                'player_client': ['ios', 'android', 'web', 'tv'],
                 'player_skip': [],
             }
         },
@@ -83,22 +79,22 @@ def get_ydl_opts(custom_opts=None):
     return opts
 
 def extract_info(url: str) -> dict:
-    with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
+    with yt_dlp.YoutubeDL(get_ydl_opts({'youtube_include_dash_manifest': True})) as ydl:
         return ydl.extract_info(url, download=False)
+
 def download_video(url: str, format_val: str, output_path: str) -> str:
-    # Базовые опции для обхода блокировок
+    # Базовые опции
     common_opts = get_ydl_opts()
 
     if format_val.isdigit():
         height = format_val
-        # Самый надежный селектор: берем лучшее видео <= выбранной высоты + лучший звук
-        # yt-dlp сам выберет лучшие кодеки, а ffmpeg склеит их в mp4
-        ydl_format = f"bestvideo[height<={height}]+bestaudio/best"
+        # Самый надежный способ: используем format_sort вместо сложной строки format
         ydl_opts = {
             **common_opts,
-            'format': ydl_format,
+            'format': 'bestvideo+bestaudio/best',
+            'format_sort': [f'res:{height}', 'ext:mp4:m4a'],
             'outtmpl': f"{output_path}.%(ext)s",
-            'merge_output_format': 'mp4', # Принудительно склеиваем в mp4
+            'merge_output_format': 'mp4',
         }
     elif format_val == 'bestaudio':
         ydl_opts = {
@@ -125,7 +121,6 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
         if actual_files:
             return actual_files[0]
         raise Exception("File not found after download")
-
 
 @app.post("/api/info", response_model=VideoInfo)
 async def get_video_info(request: VideoRequest):
