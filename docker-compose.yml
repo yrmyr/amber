@@ -9,6 +9,7 @@ services:
       - "8001:8000"
     volumes:
       - ./src/backend/downloads:/app/downloads
+      - ./src/backend/cookies.txt:/app/cookies.txt
     restart: always
 
   # Фронтенд на Nginx

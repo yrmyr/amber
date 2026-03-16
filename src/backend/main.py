@@ -2,6 +2,7 @@ import os
 import asyncio
 import uuid
 import glob
+import re
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -11,7 +12,6 @@ from typing import List, Optional
 
 app = FastAPI(title="Amber API")
 
-# Настройка CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,14 +19,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Путь для хранения скачанных файлов
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
 
 class VideoRequest(BaseModel):
     url: str
-    format_id: Optional[str] = "best"
+    format_id: Optional[str] = "best" # Теперь здесь будет высота (например "1080") или "bestaudio"
 
 class VideoFormat(BaseModel):
     format_id: str
@@ -44,42 +43,42 @@ class VideoInfo(BaseModel):
     formats: List[VideoFormat]
 
 def remove_file(path: str):
-    """Фоновая задача для удаления файла после скачивания."""
     try:
         if os.path.exists(path):
             os.remove(path)
     except Exception as e:
         print(f"Error removing file {path}: {e}")
 
-def extract_info(url: str) -> dict:
-    ydl_opts = {
+def get_ydl_opts(custom_opts=None):
+    opts = {
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        # Обход блокировок через выбор клиентов (ios/android реже просят вход)
         'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
     }
-    # Если файл cookies.txt существует, используем его (опционально)
-    if os.path.exists(os.path.join(os.path.dirname(__file__), "cookies.txt")):
-        ydl_opts['cookiefile'] = os.path.join(os.path.dirname(__file__), "cookies.txt")
-        
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
+    if os.path.exists(cookies_path):
+        opts['cookiefile'] = cookies_path
+    if custom_opts:
+        opts.update(custom_opts)
+    return opts
+
+def extract_info(url: str) -> dict:
+    with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
         return ydl.extract_info(url, download=False)
 
-def download_video(url: str, format_id: str, output_path: str) -> str:
-    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
-    
-    # Базовые опции для обхода блокировок
-    common_opts = {
-        'quiet': True,
-        'no_warnings': True,
-        'noplaylist': True,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
-    }
-
-    if format_id == 'bestaudio':
-        ydl_opts = {
-            **common_opts,
+def download_video(url: str, format_val: str, output_path: str) -> str:
+    # Если формат числовой (высота), строим селектор качества
+    if format_val.isdigit():
+        height = format_val
+        ydl_format = f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/best[height<={height}]/best"
+        ydl_opts = get_ydl_opts({
+            'format': ydl_format,
+            'outtmpl': f"{output_path}.%(ext)s",
+            'merge_output_format': 'mp4',
+        })
+    elif format_val == 'bestaudio':
+        ydl_opts = get_ydl_opts({
             'format': 'bestaudio/best',
             'outtmpl': f"{output_path}.%(ext)s",
             'postprocessors': [{
@@ -87,17 +86,14 @@ def download_video(url: str, format_id: str, output_path: str) -> str:
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-        }
+        })
     else:
-        ydl_opts = {
-            **common_opts,
-            'format': f"{format_id}+bestaudio/best",
+        # Резервный вариант на случай ошибок
+        ydl_opts = get_ydl_opts({
+            'format': 'bestvideo+bestaudio/best',
             'outtmpl': f"{output_path}.%(ext)s",
             'merge_output_format': 'mp4',
-        }
-
-    if os.path.exists(cookies_path):
-        ydl_opts['cookiefile'] = cookies_path
+        })
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
@@ -113,23 +109,22 @@ async def get_video_info(request: VideoRequest):
         info = await loop.run_in_executor(None, extract_info, request.url)
         
         formats = []
-        seen_resolutions = set()
+        seen_heights = set()
         
         for f in info.get('formats', []):
-            height = f.get('height')
-            if not height or f.get('vcodec') == 'none':
+            h = f.get('height')
+            if not h or f.get('vcodec') == 'none':
                 continue
             
-            res_str = f"{height}p"
-            if res_str not in seen_resolutions:
+            if h not in seen_heights:
                 formats.append({
-                    'format_id': f.get('format_id'),
+                    'format_id': str(h), # Передаем только высоту как ID
                     'ext': 'mp4',
-                    'resolution': res_str,
+                    'resolution': f"{h}p",
                     'filesize': f.get('filesize'),
                     'quality': f.get('format_note')
                 })
-                seen_resolutions.add(res_str)
+                seen_heights.add(h)
 
         formats.append({
             'format_id': 'bestaudio',

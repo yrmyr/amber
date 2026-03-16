@@ -66,9 +66,12 @@ function displayResult(data) {
     qualitySelect.innerHTML = '';
     data.formats.forEach(f => {
         const option = document.createElement('option');
-        option.value = f.format_id;
-        const size = f.filesize ? `(${(f.filesize / 1024 / 1024).toFixed(1)} MB)` : '';
-        option.textContent = `${f.quality || 'Auto'} - ${f.ext.toUpperCase()} ${size}`;
+        // Передаем format_id (который теперь является высотой, например "1080")
+        option.value = f.format_id; 
+        
+        const size = f.filesize ? `(~${(f.filesize / 1024 / 1024).toFixed(1)} MB)` : '';
+        // Показываем разрешение: например "1080p - MP4 (~45 MB)"
+        option.textContent = `${f.resolution} - ${f.ext.toUpperCase()} ${size}`;
         qualitySelect.appendChild(option);
     });
 
