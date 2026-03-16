@@ -25,7 +25,7 @@ if not os.path.exists(DOWNLOAD_DIR):
 
 class VideoRequest(BaseModel):
     url: str
-    format_id: Optional[str] = "best" # Теперь здесь будет высота (например "1080") или "bestaudio"
+    format_id: Optional[str] = "best"
 
 class VideoFormat(BaseModel):
     format_id: str
@@ -54,7 +54,13 @@ def get_ydl_opts(custom_opts=None):
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
+        # Используем комбинацию клиентов для получения ВСЕХ форматов (включая 1080p+)
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web', 'ios', 'tv'],
+                'skip': ['dash', 'hls'] # Не пропускаем DASH потоки
+            }
+        },
     }
     cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     if os.path.exists(cookies_path):
@@ -68,13 +74,10 @@ def extract_info(url: str) -> dict:
         return ydl.extract_info(url, download=False)
 
 def download_video(url: str, format_val: str, output_path: str) -> str:
-    # Если формат числовой (высота), строим селектор качества
     if format_val.isdigit():
         height = format_val
-        # Более надежный селектор: берем лучшее видео до нужной высоты + лучший звук
-        # И позволяем yt-dlp самому решить, какой контейнер использовать, 
-        # а потом склеить в mp4 через ffmpeg
-        ydl_format = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+        # Улучшенный селектор: ищем именно видео нужной высоты + лучшее аудио
+        ydl_format = f"bestvideo[height<={height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
         ydl_opts = get_ydl_opts({
             'format': ydl_format,
             'outtmpl': f"{output_path}.%(ext)s",
@@ -91,7 +94,6 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
             }],
         })
     else:
-        # Резервный вариант на случай ошибок
         ydl_opts = get_ydl_opts({
             'format': 'bestvideo+bestaudio/best',
             'outtmpl': f"{output_path}.%(ext)s",
@@ -114,21 +116,24 @@ async def get_video_info(request: VideoRequest):
         formats = []
         seen_heights = set()
         
+        # Перебираем все форматы, включая те, что без звука (DASH)
         for f in info.get('formats', []):
             h = f.get('height')
             if not h or f.get('vcodec') == 'none':
                 continue
             
+            # Нам нужны только уникальные разрешения (1080, 720, 480...)
             if h not in seen_heights:
                 formats.append({
-                    'format_id': str(h), # Передаем только высоту как ID
+                    'format_id': str(h),
                     'ext': 'mp4',
                     'resolution': f"{h}p",
-                    'filesize': f.get('filesize'),
-                    'quality': f.get('format_note')
+                    'filesize': f.get('filesize') or f.get('filesize_approx'),
+                    'quality': f.get('format_note') or f.get('resolution')
                 })
                 seen_heights.add(h)
 
+        # Добавляем аудио
         formats.append({
             'format_id': 'bestaudio',
             'ext': 'mp3',
@@ -137,6 +142,7 @@ async def get_video_info(request: VideoRequest):
             'quality': 'MP3 192kbps'
         })
 
+        # Сортируем от большего к меньшему
         formats.sort(key=lambda x: int(x['resolution'].split('p')[0]) if 'p' in x['resolution'] else 0, reverse=True)
 
         return {
