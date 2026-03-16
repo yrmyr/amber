@@ -2,12 +2,17 @@ import os
 import asyncio
 import uuid
 import glob
+import logging
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import yt_dlp
 from typing import List, Optional
+
+# Настройка логирования для Docker
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("amber")
 
 app = FastAPI(title="Amber API")
 
@@ -21,6 +26,13 @@ app.add_middleware(
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 if not os.path.exists(DOWNLOAD_DIR):
     os.makedirs(DOWNLOAD_DIR)
+
+# ПРОВЕРКА КУКОВ ПРИ ЗАПУСКЕ
+COOKIES_PATH = os.path.join(os.path.dirname(__file__), "cookies.txt")
+if os.path.exists(COOKIES_PATH):
+    logger.info(f"✅ COOKIES FOUND: {COOKIES_PATH}")
+else:
+    logger.warning(f"❌ NO COOKIES FOUND AT: {COOKIES_PATH}")
 
 class VideoRequest(BaseModel):
     url: str
@@ -46,32 +58,26 @@ def remove_file(path: str):
         if os.path.exists(path):
             os.remove(path)
     except Exception as e:
-        print(f"Error removing file {path}: {e}")
+        logger.error(f"Error removing file {path}: {e}")
 
 def get_ydl_opts(custom_opts=None):
-    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
-    
     opts = {
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
+        # ВКЛЮЧАЕМ ВСЕ ВОЗМОЖНЫЕ ПОТОКИ
         'youtube_include_dash_manifest': True,
         'youtube_include_hls_manifest': True,
         'check_formats': True,
         'extractor_args': {
             'youtube': {
-                'player_client': ['web', 'tv', 'android'],
+                'player_client': ['ios', 'web', 'android', 'tv'],
                 'player_skip': [],
             }
         },
     }
-
-    if os.path.exists(cookies_path):
-        print(f"--- COOKIES LOADED FROM: {cookies_path} ---")
-        opts['cookiefile'] = cookies_path
-    else:
-        print(f"--- NO COOKIES FOUND AT: {cookies_path} ---")
-
+    if os.path.exists(COOKIES_PATH):
+        opts['cookiefile'] = COOKIES_PATH
     if custom_opts:
         opts.update(custom_opts)
     return opts
@@ -83,7 +89,6 @@ def extract_info(url: str) -> dict:
 def download_video(url: str, format_val: str, output_path: str) -> str:
     if format_val.isdigit():
         height = format_val
-        # Ультра-гибкий селектор форматов
         ydl_format = f"bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
         ydl_opts = get_ydl_opts({
             'format': ydl_format,
@@ -117,18 +122,15 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
 @app.post("/api/info", response_model=VideoInfo)
 async def get_video_info(request: VideoRequest):
     try:
+        logger.info(f"Fetching info for: {request.url}")
         loop = asyncio.get_event_loop()
         info = await loop.run_in_executor(None, extract_info, request.url)
         
         formats = []
         seen_heights = set()
         
-        raw_formats = info.get('formats', [])
-        
-        for f in raw_formats:
+        for f in info.get('formats', []):
             h = f.get('height')
-            # На VPS YouTube часто отдает видео и аудио раздельно. 
-            # Нам нужны только видео-потоки для формирования списка разрешений.
             if not h or f.get('vcodec') == 'none':
                 continue
             
@@ -150,9 +152,7 @@ async def get_video_info(request: VideoRequest):
             'quality': 'MP3 192kbps'
         })
 
-        # Сортировка от большего к меньшему
         formats.sort(key=lambda x: int(x['resolution'].split('p')[0]) if 'p' in x['resolution'] else 0, reverse=True)
-
         return {
             "id": info.get("id"),
             "title": info.get("title"),
@@ -162,6 +162,7 @@ async def get_video_info(request: VideoRequest):
             "formats": formats
         }
     except Exception as e:
+        logger.error(f"Error fetching info: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/download")
@@ -183,6 +184,7 @@ async def start_download(request: VideoRequest, background_tasks: BackgroundTask
             media_type='application/octet-stream'
         )
     except Exception as e:
+        logger.error(f"Download error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
