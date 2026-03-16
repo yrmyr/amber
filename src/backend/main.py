@@ -56,8 +56,10 @@ def extract_info(url: str) -> dict:
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
+        # Обход блокировок через выбор клиентов (ios/android реже просят вход)
+        'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
     }
-    # Если файл cookies.txt существует, используем его
+    # Если файл cookies.txt существует, используем его (опционально)
     if os.path.exists(os.path.join(os.path.dirname(__file__), "cookies.txt")):
         ydl_opts['cookiefile'] = os.path.join(os.path.dirname(__file__), "cookies.txt")
         
@@ -67,8 +69,17 @@ def extract_info(url: str) -> dict:
 def download_video(url: str, format_id: str, output_path: str) -> str:
     cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
     
+    # Базовые опции для обхода блокировок
+    common_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'noplaylist': True,
+        'extractor_args': {'youtube': {'player_client': ['ios', 'android', 'web']}},
+    }
+
     if format_id == 'bestaudio':
         ydl_opts = {
+            **common_opts,
             'format': 'bestaudio/best',
             'outtmpl': f"{output_path}.%(ext)s",
             'postprocessors': [{
@@ -76,18 +87,13 @@ def download_video(url: str, format_id: str, output_path: str) -> str:
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
         }
     else:
         ydl_opts = {
+            **common_opts,
             'format': f"{format_id}+bestaudio/best",
             'outtmpl': f"{output_path}.%(ext)s",
             'merge_output_format': 'mp4',
-            'quiet': True,
-            'no_warnings': True,
-            'noplaylist': True,
         }
 
     if os.path.exists(cookies_path):
@@ -109,7 +115,6 @@ async def get_video_info(request: VideoRequest):
         formats = []
         seen_resolutions = set()
         
-        # Собираем видео-форматы разных разрешений
         for f in info.get('formats', []):
             height = f.get('height')
             if not height or f.get('vcodec') == 'none':
@@ -119,14 +124,13 @@ async def get_video_info(request: VideoRequest):
             if res_str not in seen_resolutions:
                 formats.append({
                     'format_id': f.get('format_id'),
-                    'ext': 'mp4', # Мы будем принудительно мержить в mp4
+                    'ext': 'mp4',
                     'resolution': res_str,
                     'filesize': f.get('filesize'),
                     'quality': f.get('format_note')
                 })
                 seen_resolutions.add(res_str)
 
-        # Добавляем аудио-формат
         formats.append({
             'format_id': 'bestaudio',
             'ext': 'mp3',
@@ -135,7 +139,6 @@ async def get_video_info(request: VideoRequest):
             'quality': 'MP3 192kbps'
         })
 
-        # Сортируем: сначала самое высокое качество
         formats.sort(key=lambda x: int(x['resolution'].split('p')[0]) if 'p' in x['resolution'] else 0, reverse=True)
 
         return {
