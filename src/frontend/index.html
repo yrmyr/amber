@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amber | Быстрый загрузчик медиа</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <main class="container">
+        <header>
+            <h1 class="logo">💎 AMBER</h1>
+            <p class="subtitle">Вставьте ссылку на видео для мгновенного скачивания</p>
+        </header>
+
+        <section class="search-section">
+            <div class="input-wrapper">
+                <input type="text" id="url-input" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+                <button id="fetch-btn">
+                    <span class="icon">🚀</span>
+                </button>
+            </div>
+        </section>
+
+        <section id="result-section" class="result-section hidden">
+            <div class="video-card">
+                <div class="thumbnail-wrapper">
+                    <img id="video-thumbnail" src="" alt="Thumbnail">
+                    <div id="video-duration" class="duration-badge">0:00</div>
+                </div>
+                <div class="video-info">
+                    <h2 id="video-title">Название видео</h2>
+                    <p id="video-author">Автор канала</p>
+                    
+                    <div class="format-selector">
+                        <label for="quality-select">Выберите качество:</label>
+                        <select id="quality-select"></select>
+                    </div>
+
+                    <button id="download-btn" class="primary-btn">Скачать файл</button>
+                </div>
+            </div>
+        </section>
+
+        <div id="loader" class="loader hidden">
+            <div class="spinner"></div>
+            <p>Анализируем видео...</p>
+        </div>
+
+        <div id="error-msg" class="error-msg hidden"></div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

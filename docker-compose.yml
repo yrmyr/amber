@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  # Бэкенд на FastAPI
+  backend:
+    build: ./src/backend
+    container_name: amber-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src/backend/downloads:/app/downloads
+    restart: always
+
+  # Фронтенд на Nginx
+  frontend:
+    build: ./src/frontend
+    container_name: amber-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: always
