@@ -49,24 +49,29 @@ def remove_file(path: str):
         print(f"Error removing file {path}: {e}")
 
 def get_ydl_opts(custom_opts=None):
+    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
+    
     opts = {
         'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        # ВКЛЮЧАЕМ МАНИФЕСТЫ (именно тут прячутся 1080p+ на VPS)
         'youtube_include_dash_manifest': True,
         'youtube_include_hls_manifest': True,
         'check_formats': True,
         'extractor_args': {
             'youtube': {
                 'player_client': ['web', 'tv', 'android'],
-                'player_skip': [], # Не пропускаем ничего
+                'player_skip': [],
             }
         },
     }
-    cookies_path = os.path.join(os.path.dirname(__file__), "cookies.txt")
+
     if os.path.exists(cookies_path):
+        print(f"--- COOKIES LOADED FROM: {cookies_path} ---")
         opts['cookiefile'] = cookies_path
+    else:
+        print(f"--- NO COOKIES FOUND AT: {cookies_path} ---")
+
     if custom_opts:
         opts.update(custom_opts)
     return opts
