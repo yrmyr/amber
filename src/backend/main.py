@@ -61,18 +61,9 @@ def get_ydl_opts(custom_opts=None):
         'quiet': False, # Включаем логи для отладки в Docker logs
         'no_warnings': False,
         'noplaylist': True,
+        'nocheckcertificate': True,
+        'ignoreerrors': False,
         'source_address': '0.0.0.0', # Принудительно IPv4
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web', 'tv'], # Android сейчас стабильнее всего
-                'player_skip': ['webpage', 'configs'],
-            }
-        },
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*',
-            'Accept-Language': 'en-US,en;q=0.9',
-        }
     }
     
     if os.path.exists(COOKIES_PATH):

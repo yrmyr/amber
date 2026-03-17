@@ -1,5 +1,5 @@
 fastapi==0.115.0
 uvicorn==0.31.0
-yt-dlp
+yt-dlp>=2025.01.15
 python-multipart==0.0.12
 pydantic==2.10.0
