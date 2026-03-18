@@ -19,8 +19,7 @@ WORKDIR /app
 # Копируем зависимости и устанавливаем
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir -U yt-dlp[default]
-RUN pip install --no-cache-dir -U pyxdamerauleaux
+    pip install --no-cache-dir -U "yt-dlp[default]" pycryptodome
 
 # Копируем исходный код
 COPY . .
