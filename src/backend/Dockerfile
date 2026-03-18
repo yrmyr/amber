@@ -19,7 +19,7 @@ WORKDIR /app
 # Копируем зависимости и устанавливаем
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && \
-    RUN pip install --no-cache-dir -U yt-dlp[default]
+    pip install --no-cache-dir -U yt-dlp[default]
 
 # Копируем исходный код
 COPY . .
