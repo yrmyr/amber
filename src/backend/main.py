@@ -3,6 +3,7 @@ import asyncio
 import uuid
 import glob
 import logging
+import subprocess
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -85,9 +86,6 @@ def extract_info(url: str) -> dict:
     with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
         return ydl.extract_info(url, download=False)
 
-import subprocess
-import json
-
 def download_video(url: str, format_val: str, output_path: str) -> str:
     # ПУЛЕСТОЙКИЙ СЕЛЕКТОР ФОРМАТА
     if format_val.isdigit():
@@ -140,7 +138,8 @@ async def get_video_info(request: VideoRequest):
         
         for f in info.get('formats', []):
             h = f.get('height')
-            if not h or f.get('vcodec') == 'none':
+            # FIXED: Only skip if height is missing, allow audio-only formats
+            if not h:
                 continue
             
             if h not in seen_heights:
@@ -154,7 +153,18 @@ async def get_video_info(request: VideoRequest):
                 seen_heights.add(h)
 
         formats.append({'format_id': 'bestaudio', 'ext': 'mp3', 'resolution': 'Audio Only', 'quality': 'MP3 192kbps'})
-        formats.sort(key=lambda x: int(x['resolution'].split('p')[0]) if 'p' in x['resolution'] else 0, reverse=True)
+        
+        # FIXED: Safe sorting with proper error handling
+        def get_resolution_sort_key(fmt):
+            resolution = fmt['resolution']
+            if 'p' in resolution:
+                try:
+                    return int(resolution.split('p')[0])
+                except (ValueError, IndexError):
+                    return 0
+            return 0
+        
+        formats.sort(key=get_resolution_sort_key, reverse=True)
 
         return {
             "id": info.get("id"),
