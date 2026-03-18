@@ -57,19 +57,13 @@ def remove_file(path: str):
         logger.error(f"Error removing file {path}: {e}")
 
 def get_ydl_opts(custom_opts=None):
-    # МАКСИМАЛЬНО НАДЕЖНЫЕ ОПЦИИ ДЛЯ VPS
     opts = {
         'quiet': False,
         'no_warnings': False,
         'noplaylist': True,
         'nocheckcertificate': True,
         'ignoreerrors': False,
-        'ffmpeg_location': '/usr/bin/ffmpeg', # Явный путь в Debian-образах
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web', 'tv'],
-            }
-        },
+        'ffmpeg_location': '/usr/bin/ffmpeg',
     }
     
     if os.path.exists(COOKIES_PATH):
@@ -87,7 +81,6 @@ def extract_info(url: str) -> dict:
         return ydl.extract_info(url, download=False)
 
 def download_video(url: str, format_val: str, output_path: str) -> str:
-    # ПУЛЕСТОЙКИЙ СЕЛЕКТОР ФОРМАТА
     if format_val.isdigit():
         h = format_val
         ydl_format = f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
@@ -104,7 +97,6 @@ def download_video(url: str, format_val: str, output_path: str) -> str:
         "--merge-output-format", "mp4",
         "--no-playlist",
         "--no-check-certificate",
-        "--extractor-args", "youtube:player_client=android,web,ios"
     ]
 
     if os.path.exists(COOKIES_PATH):
@@ -138,7 +130,6 @@ async def get_video_info(request: VideoRequest):
         
         for f in info.get('formats', []):
             h = f.get('height')
-            # FIXED: Only skip if height is missing, allow audio-only formats
             if not h:
                 continue
             
@@ -154,7 +145,6 @@ async def get_video_info(request: VideoRequest):
 
         formats.append({'format_id': 'bestaudio', 'ext': 'mp3', 'resolution': 'Audio Only', 'quality': 'MP3 192kbps'})
         
-        # FIXED: Safe sorting with proper error handling
         def get_resolution_sort_key(fmt):
             resolution = fmt['resolution']
             if 'p' in resolution:
