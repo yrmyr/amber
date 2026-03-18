@@ -63,7 +63,7 @@ def get_ydl_opts(custom_opts=None):
         'noplaylist': True,
         'nocheckcertificate': True,
         'ignoreerrors': False,
-        # Удалено 'source_address': '0.0.0.0', так как это может мешать на некоторых серверах
+        'ffmpeg_location': '/usr/bin/ffmpeg', # Явный путь в Debian-образах
         'extractor_args': {
             'youtube': {
                 'player_client': ['android', 'web', 'tv'],
