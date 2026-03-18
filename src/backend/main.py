@@ -85,42 +85,48 @@ def extract_info(url: str) -> dict:
     with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
         return ydl.extract_info(url, download=False)
 
+import subprocess
+import json
+
 def download_video(url: str, format_val: str, output_path: str) -> str:
-    common_opts = get_ydl_opts()
-    
     # ПУЛЕСТОЙКИЙ СЕЛЕКТОР ФОРМАТА
     if format_val.isdigit():
         h = format_val
-        # 1. Видео <= H + звук (предпочтительно mp4)
-        # 2. Видео <= H + звук (любое)
-        # 3. Лучшее до H (единый файл)
-        # 4. Самое лучшее что есть вообще
         ydl_format = f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
     elif format_val == 'bestaudio':
         ydl_format = "bestaudio/best"
     else:
         ydl_format = "bestvideo+bestaudio/best"
 
-    ydl_opts = {
-        **common_opts,
-        'format': ydl_format,
-        'outtmpl': f"{output_path}.%(ext)s",
-        'merge_output_format': 'mp4',
-    }
-    
-    if format_val == 'bestaudio':
-        ydl_opts['postprocessors'] = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }]
+    cmd = [
+        "yt-dlp",
+        url,
+        "-f", ydl_format,
+        "-o", f"{output_path}.%(ext)s",
+        "--merge-output-format", "mp4",
+        "--no-playlist",
+        "--no-check-certificate",
+        "--extractor-args", "youtube:player_client=android,web,ios"
+    ]
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
+    if os.path.exists(COOKIES_PATH):
+        cmd.extend(["--cookies", COOKIES_PATH])
+        logger.info(f"--- USING COOKIES.TXT IN SUBPROCESS ---")
+
+    if format_val == 'bestaudio':
+        cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "192K"])
+
+    logger.info(f"Executing command: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         actual_files = glob.glob(f"{output_path}.*")
         if actual_files:
             return actual_files[0]
         raise Exception("File not found after download")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"yt-dlp error: {e.stderr}")
+        raise Exception(f"Download failed: {e.stderr}")
 
 @app.post("/api/info", response_model=VideoInfo)
 async def get_video_info(request: VideoRequest):

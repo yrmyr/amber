@@ -1,12 +1,15 @@
 # Используем официальный Python образ
 FROM python:3.12-slim
 
-# Установка необходимых системных утилит (ffmpeg, nodejs для yt-dlp)
+# Установка необходимых системных утилит (ffmpeg, nodejs, yt-dlp)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
+    python3-pip \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
     && rm -rf /var/lib/apt/lists/*
 
 # Рабочая директория
