@@ -58,12 +58,17 @@ def remove_file(path: str):
 def get_ydl_opts(custom_opts=None):
     # МАКСИМАЛЬНО НАДЕЖНЫЕ ОПЦИИ ДЛЯ VPS
     opts = {
-        'quiet': False, # Включаем логи для отладки в Docker logs
+        'quiet': False,
         'no_warnings': False,
         'noplaylist': True,
         'nocheckcertificate': True,
         'ignoreerrors': False,
-        'source_address': '0.0.0.0', # Принудительно IPv4
+        # Удалено 'source_address': '0.0.0.0', так как это может мешать на некоторых серверах
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web', 'tv'],
+            }
+        },
     }
     
     if os.path.exists(COOKIES_PATH):
@@ -77,19 +82,20 @@ def get_ydl_opts(custom_opts=None):
     return opts
 
 def extract_info(url: str) -> dict:
-    with yt_dlp.YoutubeDL(get_ydl_opts({'youtube_include_dash_manifest': True})) as ydl:
+    with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
         return ydl.extract_info(url, download=False)
 
 def download_video(url: str, format_val: str, output_path: str) -> str:
     common_opts = get_ydl_opts()
     
     # ПУЛЕСТОЙКИЙ СЕЛЕКТОР ФОРМАТА
-    # Если формат - число (высота), ищем лучшее видео этой высоты + лучший звук.
-    # Если не находим - берем просто "лучшее видео + лучший звук".
     if format_val.isdigit():
         h = format_val
-        # Логика: "видео <= H + звук" ИЛИ "просто лучшее доступное"
-        ydl_format = f"bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
+        # 1. Видео <= H + звук (предпочтительно mp4)
+        # 2. Видео <= H + звук (любое)
+        # 3. Лучшее до H (единый файл)
+        # 4. Самое лучшее что есть вообще
+        ydl_format = f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/best[height<={h}]/best"
     elif format_val == 'bestaudio':
         ydl_format = "bestaudio/best"
     else:

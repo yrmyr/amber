@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -U yt-dlp
 
 # Копируем исходный код
-COPY main.py .
+COPY . .
 
 # Создаем папку для загрузок
 RUN mkdir -p downloads && chmod 777 downloads
